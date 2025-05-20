@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gocelery/gocelery"
 	"github.com/gomodule/redigo/redis"
+	"github.com/nine2onetech/gocelery"
 )
 
 // exampleAddTask is integer addition task
