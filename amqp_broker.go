@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/streadway/amqp"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 // AMQPExchange stores AMQP Exchange configuration
@@ -30,7 +30,7 @@ func NewAMQPExchange(name string) *AMQPExchange {
 	}
 }
 
-// AMQPQueue stores AMQP Queue configuration
+// AMQPQueue stores AMQP DefaultQueue configuration
 type AMQPQueue struct {
 	Name       string
 	Durable    bool
@@ -46,12 +46,12 @@ func NewAMQPQueue(name string) *AMQPQueue {
 	}
 }
 
-//AMQPCeleryBroker is RedisBroker for AMQP
+// AMQPCeleryBroker is RedisBroker for AMQP
 type AMQPCeleryBroker struct {
 	*amqp.Channel
 	Connection       *amqp.Connection
 	Exchange         *AMQPExchange
-	Queue            *AMQPQueue
+	DefaultQueue     *AMQPQueue
 	consumingChannel <-chan amqp.Delivery
 	Rate             int
 }
@@ -78,11 +78,11 @@ func NewAMQPCeleryBroker(host string) *AMQPCeleryBroker {
 // NewAMQPCeleryBrokerByConnAndChannel creates new AMQPCeleryBroker using AMQP conn and channel
 func NewAMQPCeleryBrokerByConnAndChannel(conn *amqp.Connection, channel *amqp.Channel) *AMQPCeleryBroker {
 	broker := &AMQPCeleryBroker{
-		Channel:    channel,
-		Connection: conn,
-		Exchange:   NewAMQPExchange("default"),
-		Queue:      NewAMQPQueue("celery"),
-		Rate:       4,
+		Channel:      channel,
+		Connection:   conn,
+		Exchange:     NewAMQPExchange("default"),
+		DefaultQueue: NewAMQPQueue("celery"),
+		Rate:         4,
 	}
 	if err := broker.CreateExchange(); err != nil {
 		panic(err)
@@ -101,7 +101,7 @@ func NewAMQPCeleryBrokerByConnAndChannel(conn *amqp.Connection, channel *amqp.Ch
 
 // StartConsumingChannel spawns receiving channel on AMQP queue
 func (b *AMQPCeleryBroker) StartConsumingChannel() error {
-	channel, err := b.Consume(b.Queue.Name, "", false, false, false, false, nil)
+	channel, err := b.Consume(b.DefaultQueue.Name, "", false, false, false, false, nil)
 	if err != nil {
 		return err
 	}
@@ -109,10 +109,9 @@ func (b *AMQPCeleryBroker) StartConsumingChannel() error {
 	return nil
 }
 
-// SendCeleryMessage sends CeleryMessage to broker
-func (b *AMQPCeleryBroker) SendCeleryMessage(message *CeleryMessage) error {
+// SendCeleryMessageToQueue sends CeleryMessage to broker
+func (b *AMQPCeleryBroker) SendCeleryMessageToQueue(queueName string, message *CeleryMessage) error {
 	taskMessage := message.GetTaskMessage()
-	queueName := "celery"
 	_, err := b.QueueDeclare(
 		queueName, // name
 		true,      // durable
@@ -125,10 +124,59 @@ func (b *AMQPCeleryBroker) SendCeleryMessage(message *CeleryMessage) error {
 		return err
 	}
 	err = b.ExchangeDeclare(
-		"default",
-		"direct",
-		true,
-		true,
+		b.Exchange.Name,
+		b.Exchange.Type,
+		b.Exchange.Durable,
+		b.Exchange.AutoDelete,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		return err
+	}
+
+	resBytes, err := json.Marshal(taskMessage)
+	if err != nil {
+		return err
+	}
+
+	publishMessage := amqp.Publishing{
+		DeliveryMode: amqp.Persistent,
+		Timestamp:    time.Now(),
+		ContentType:  "application/json",
+		Body:         resBytes,
+	}
+
+	return b.Publish(
+		"",
+		queueName,
+		false,
+		false,
+		publishMessage,
+	)
+}
+
+// SendCeleryMessage sends CeleryMessage to broker
+func (b *AMQPCeleryBroker) SendCeleryMessage(message *CeleryMessage) error {
+	taskMessage := message.GetTaskMessage()
+	queueName := b.DefaultQueue.Name
+	_, err := b.QueueDeclare(
+		queueName, // name
+		true,      // durable
+		false,     // autoDelete
+		false,     // exclusive
+		false,     // noWait
+		nil,       // args
+	)
+	if err != nil {
+		return err
+	}
+	err = b.ExchangeDeclare(
+		b.Exchange.Name,
+		b.Exchange.Type,
+		b.Exchange.Durable,
+		b.Exchange.AutoDelete,
 		false,
 		false,
 		nil,
@@ -186,12 +234,12 @@ func (b *AMQPCeleryBroker) CreateExchange() error {
 	)
 }
 
-// CreateQueue declares AMQP Queue with stored configuration
+// CreateQueue declares AMQP DefaultQueue with stored configuration
 func (b *AMQPCeleryBroker) CreateQueue() error {
 	_, err := b.QueueDeclare(
-		b.Queue.Name,
-		b.Queue.Durable,
-		b.Queue.AutoDelete,
+		b.DefaultQueue.Name,
+		b.DefaultQueue.Durable,
+		b.DefaultQueue.AutoDelete,
 		false,
 		false,
 		nil,
