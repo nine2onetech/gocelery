@@ -99,6 +99,31 @@ func NewAMQPCeleryBrokerByConnAndChannel(conn *amqp.Connection, channel *amqp.Ch
 	return broker
 }
 
+// NewAMQPCeleryBrokerWithQueue creates new AMQPCeleryBroker with a custom queue name
+func NewAMQPCeleryBrokerWithQueue(host string, queueName string) *AMQPCeleryBroker {
+	conn, channel := NewAMQPConnection(host)
+	broker := &AMQPCeleryBroker{
+		Channel:         channel,
+		Connection:      conn,
+		DefaultExchange: NewAMQPExchange("default"),
+		DefaultQueue:    NewAMQPQueue(queueName),
+		Rate:            4,
+	}
+	if err := broker.CreateExchange(); err != nil {
+		panic(err)
+	}
+	if err := broker.CreateQueue(); err != nil {
+		panic(err)
+	}
+	if err := broker.Qos(broker.Rate, 0, false); err != nil {
+		panic(err)
+	}
+	if err := broker.StartConsumingChannel(); err != nil {
+		panic(err)
+	}
+	return broker
+}
+
 // StartConsumingChannel spawns receiving channel on AMQP queue
 func (b *AMQPCeleryBroker) StartConsumingChannel() error {
 	channel, err := b.Consume(b.DefaultQueue.Name, "", false, false, false, false, nil)
