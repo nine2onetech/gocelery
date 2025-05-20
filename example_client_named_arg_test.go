@@ -42,6 +42,7 @@ func Example_clientWithNamedArguments() {
 	// run task
 	asyncResult, err := cli.DelayKwargs(
 		taskName,
+		nil,
 		map[string]interface{}{
 			"a": argA,
 			"b": argB,

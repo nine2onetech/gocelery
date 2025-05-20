@@ -12,7 +12,7 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-// AMQPExchange stores AMQP Exchange configuration
+// AMQPExchange stores AMQP DefaultExchange configuration
 type AMQPExchange struct {
 	Name       string
 	Type       string
@@ -50,7 +50,7 @@ func NewAMQPQueue(name string) *AMQPQueue {
 type AMQPCeleryBroker struct {
 	*amqp.Channel
 	Connection       *amqp.Connection
-	Exchange         *AMQPExchange
+	DefaultExchange  *AMQPExchange
 	DefaultQueue     *AMQPQueue
 	consumingChannel <-chan amqp.Delivery
 	Rate             int
@@ -78,11 +78,11 @@ func NewAMQPCeleryBroker(host string) *AMQPCeleryBroker {
 // NewAMQPCeleryBrokerByConnAndChannel creates new AMQPCeleryBroker using AMQP conn and channel
 func NewAMQPCeleryBrokerByConnAndChannel(conn *amqp.Connection, channel *amqp.Channel) *AMQPCeleryBroker {
 	broker := &AMQPCeleryBroker{
-		Channel:      channel,
-		Connection:   conn,
-		Exchange:     NewAMQPExchange("default"),
-		DefaultQueue: NewAMQPQueue("celery"),
-		Rate:         4,
+		Channel:         channel,
+		Connection:      conn,
+		DefaultExchange: NewAMQPExchange("default"),
+		DefaultQueue:    NewAMQPQueue("celery"),
+		Rate:            4,
 	}
 	if err := broker.CreateExchange(); err != nil {
 		panic(err)
@@ -109,9 +109,10 @@ func (b *AMQPCeleryBroker) StartConsumingChannel() error {
 	return nil
 }
 
-// SendCeleryMessageToQueue sends CeleryMessage to broker
-func (b *AMQPCeleryBroker) SendCeleryMessageToQueue(queueName string, message *CeleryMessage) error {
+// SendCeleryMessage sends CeleryMessage to broker
+func (b *AMQPCeleryBroker) SendCeleryMessage(message *CeleryMessage) error {
 	taskMessage := message.GetTaskMessage()
+	queueName := b.DefaultQueue.Name
 	_, err := b.QueueDeclare(
 		queueName, // name
 		true,      // durable
@@ -124,10 +125,10 @@ func (b *AMQPCeleryBroker) SendCeleryMessageToQueue(queueName string, message *C
 		return err
 	}
 	err = b.ExchangeDeclare(
-		b.Exchange.Name,
-		b.Exchange.Type,
-		b.Exchange.Durable,
-		b.Exchange.AutoDelete,
+		b.DefaultExchange.Name,
+		b.DefaultExchange.Type,
+		b.DefaultExchange.Durable,
+		b.DefaultExchange.AutoDelete,
 		false,
 		false,
 		nil,
@@ -157,10 +158,9 @@ func (b *AMQPCeleryBroker) SendCeleryMessageToQueue(queueName string, message *C
 	)
 }
 
-// SendCeleryMessage sends CeleryMessage to broker
-func (b *AMQPCeleryBroker) SendCeleryMessage(message *CeleryMessage) error {
+// SendCeleryMessageToQueue sends CeleryMessage to broker
+func (b *AMQPCeleryBroker) SendCeleryMessageToQueue(message *CeleryMessage, queueName string) error {
 	taskMessage := message.GetTaskMessage()
-	queueName := b.DefaultQueue.Name
 	_, err := b.QueueDeclare(
 		queueName, // name
 		true,      // durable
@@ -173,10 +173,10 @@ func (b *AMQPCeleryBroker) SendCeleryMessage(message *CeleryMessage) error {
 		return err
 	}
 	err = b.ExchangeDeclare(
-		b.Exchange.Name,
-		b.Exchange.Type,
-		b.Exchange.Durable,
-		b.Exchange.AutoDelete,
+		b.DefaultExchange.Name,
+		b.DefaultExchange.Type,
+		b.DefaultExchange.Durable,
+		b.DefaultExchange.AutoDelete,
 		false,
 		false,
 		nil,
@@ -224,10 +224,10 @@ func (b *AMQPCeleryBroker) GetTaskMessage() (*TaskMessage, error) {
 // CreateExchange declares AMQP exchange with stored configuration
 func (b *AMQPCeleryBroker) CreateExchange() error {
 	return b.ExchangeDeclare(
-		b.Exchange.Name,
-		b.Exchange.Type,
-		b.Exchange.Durable,
-		b.Exchange.AutoDelete,
+		b.DefaultExchange.Name,
+		b.DefaultExchange.Type,
+		b.DefaultExchange.Durable,
+		b.DefaultExchange.AutoDelete,
 		false,
 		false,
 		nil,
